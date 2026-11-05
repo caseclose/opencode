@@ -107,6 +107,8 @@ export type CallToolContent =
   | { readonly type: "media"; readonly data: string; readonly mimeType: string; readonly uri?: string }
 
 export interface CallToolResult {
+  /** Original MCP envelope for host integrations; never use it as model or Code Mode output. */
+  readonly raw?: SdkCallToolResult
   readonly isError: boolean
   readonly structured?: unknown
   readonly content: ReadonlyArray<CallToolContent>
@@ -606,6 +608,7 @@ function negotiation(protocol: ConfigMCP.Protocol | undefined): VersionNegotiati
 
 function toCallToolResult(result: SdkCallToolResult): CallToolResult {
   return {
+    raw: result,
     isError: result.isError === true,
     structured: result.structuredContent,
     content: result.content.flatMap((part): CallToolContent[] => {

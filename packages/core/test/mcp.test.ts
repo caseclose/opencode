@@ -8,6 +8,7 @@ import {
   StreamableHTTPClientTransport,
   isJSONRPCRequest,
   type ListToolsResult,
+  type CallToolResult,
 } from "@modelcontextprotocol/client"
 import {
   createMcpHandler,
@@ -37,6 +38,7 @@ import { McpClient } from "@opencode/core/mcp/client"
 import { McpPool } from "@opencode/core/mcp/pool"
 import { McpStdio } from "@opencode/core/mcp/stdio"
 import { Permission } from "@opencode/core/permission"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { AbsolutePath } from "@opencode/core/schema"
 import { Session } from "@opencode/core/session"
 import { State } from "@opencode/core/state"
@@ -120,6 +122,7 @@ function resourceServer(
     malformedTool?: boolean
     /** Listed after the default tools. A call's `structured` argument comes back as structured content. */
     tools?: ListToolsResult["tools"]
+    result?: CallToolResult
     /** Legacy servers give up on the URL elicitation after this many milliseconds. */
     elicitationTimeout?: number
     /** Lists a `roots` tool that asks for the client's roots (2026-07-28 only) and returns them. */
@@ -270,7 +273,8 @@ function resourceServer(
             })
             const structured = request.params.arguments?.structured
             return Promise.resolve(
-              structured === undefined ? { content: [] } : { content: [], structuredContent: structured },
+              input.result ??
+                (structured === undefined ? { content: [] } : { content: [], structuredContent: structured }),
             )
           })
         }
@@ -2745,11 +2749,11 @@ const gatedServer = Effect.gen(function* () {
 })
 
 // The real Mcp layer behind the tool registry; the bus never delivers, so only flush can register tools.
-const startupRegistry = (url: string, timeout?: ConfigMCP.Timeout) =>
-  AppNodeBuilder.build(LayerNode.group([Mcp.node, Tool.node, McpTool.node]), [
+const startupRegistry = (url: string, timeout?: ConfigMCP.Timeout, codemode = false) =>
+  AppNodeBuilder.build(LayerNode.group([Mcp.node, Tool.node, McpTool.node, PluginHooks.node]), [
     Mcp.node.replace(
       resourceMcpLayer(
-        new ConfigMCP.Remote({ type: "remote", url, oauth: false, codemode: false, ...(timeout ? { timeout } : {}) }),
+        new ConfigMCP.Remote({ type: "remote", url, oauth: false, codemode, ...(timeout ? { timeout } : {}) }),
       ),
     ),
     Permission.node.replace(permissions),
@@ -2757,6 +2761,49 @@ const startupRegistry = (url: string, timeout?: ConfigMCP.Timeout) =>
     Image.node.replace(imagePassthrough),
     Global.node.replace(Global.layerWith({ data: outputData })),
   ])
+
+for (const codemode of [false, true]) {
+  testEffect(Layer.empty).live(`preserves the MCP envelope for host hooks with Code Mode ${codemode}`, () =>
+    Effect.gen(function* () {
+      assertion = yield* Deferred.make<Permission.AssertInput>()
+      decision = Effect.void
+      const response: CallToolResult = {
+        content: [{ type: "text", text: "Model-visible result", annotations: { audience: ["user"], priority: 0.5 } }],
+        structuredContent: { ok: true },
+        _meta: { "example.test/private": "host-only-fixture" },
+      }
+      const server = yield* resourceServer({ result: response })
+      yield* Effect.gen(function* () {
+        const tools = yield* Tool.Service
+        const registration = yield* McpTool.Service
+        const hooks = yield* PluginHooks.Service
+        yield* registration.flush
+        let captured: unknown
+        yield* hooks.register("tool", "execute.after", (event) =>
+          Effect.sync(() => {
+            if (event.tool === "resources_echo" && event.status === "completed") captured = event.result.metadata
+          }),
+        )
+        const snapshot = yield* tools.snapshot()
+        const result = yield* snapshot.execute({
+          sessionID: Session.ID.make("ses_mcp_host_metadata"),
+          ...toolIdentity,
+          call: {
+            type: "tool-call",
+            id: "call_mcp_host_metadata",
+            name: codemode ? "execute" : "resources_echo",
+            input: codemode ? { code: "return await tools.resources.echo({})" } : {},
+          },
+        })
+        expect(captured).toEqual({ mcp: { server: "resources", tool: "echo", result: response } })
+        expect(codemode ? JSON.parse(result.output.output) : result.output).toEqual({ ok: true })
+        expect(JSON.stringify(result.content)).not.toContain("host-only-fixture")
+        expect(JSON.stringify(result.output)).not.toContain("host-only-fixture")
+        expect(server.state.toolCalls).toHaveLength(1)
+      }).pipe(Effect.provide(startupRegistry(server.url, undefined, codemode)))
+    }),
+  )
+}
 
 testEffect(Layer.empty).effect("flush waits for a server that connects within its startup window", () =>
   Effect.gen(function* () {

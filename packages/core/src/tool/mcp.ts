@@ -102,6 +102,9 @@ export const layer = Layer.effect(
                     return {
                       output: output(),
                       ...(content.length === 0 ? {} : { content }),
+                      ...(result.raw === undefined
+                        ? {}
+                        : { metadata: { mcp: { server: tool.server, tool: tool.name, result: result.raw } } }),
                     }
                   }).pipe(
                     Effect.mapError((error) => {
