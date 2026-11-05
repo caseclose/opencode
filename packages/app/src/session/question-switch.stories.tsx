@@ -31,6 +31,52 @@ export const Experiments = {
   ),
 }
 
+export const ClosedChoices = {
+  render: () => (
+    <SessionPreview
+      title="Choose from the available answers"
+      description="opencode · closed-choice questions"
+      document={questionPendingDocument}
+      request={{
+        type: "question",
+        value: {
+          ...activeQuestionRequest,
+          fields: [
+            {
+              key: "decision",
+              type: "string",
+              title: "Decision",
+              description: "Choose whether to trust this project.",
+              custom: false,
+              options: [
+                { value: "reject", label: "Reject" },
+                { value: "trust", label: "Trust" },
+              ],
+            },
+            {
+              key: "include",
+              type: "multiselect",
+              title: "Include",
+              description: "Choose which surfaces to include.",
+              options: [
+                { value: "files", label: "Changed files" },
+                { value: "terminal", label: "Terminal" },
+              ],
+            },
+            {
+              key: "notes",
+              type: "string",
+              title: "Notes",
+              description: "Add any notes.",
+              custom: false,
+            },
+          ],
+        },
+      }}
+    />
+  ),
+}
+
 // Several questions of different lengths and kinds in a row.
 export const QuestionSeries = {
   render: () => (
@@ -87,6 +133,7 @@ export const QuestionSeries = {
             {
               key: "levers",
               type: "multiselect",
+              custom: true,
               title: "Levers",
               description: "Which levers should I build now?",
               options: [
@@ -146,6 +193,7 @@ export const LongList = {
             {
               key: "details",
               type: "multiselect",
+              custom: true,
               title: "Details",
               description: "Which should the builder add next? Pick any.",
               options: [

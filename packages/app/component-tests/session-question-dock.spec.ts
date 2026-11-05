@@ -3,6 +3,47 @@ import type { MotionKnob } from "@opencode/ui/motion-tuning"
 import { expect, sourceURL, story } from "../../stories/playwright/story"
 
 for (const variant of ["classic", "experimental"] as const) {
+  story(
+    `${variant} closed-choice questions exclude custom answers from pointer and keyboard navigation`,
+    async ({ mount, page }) => {
+      await page.addInitScript(
+        (enabled) => localStorage.setItem("settings.v3", JSON.stringify({ general: { newQuestionUI: enabled } })),
+        variant === "experimental",
+      )
+
+      const component = await mount("session-question-switch--closed-choices")
+      const question = component.locator('[data-component="dock-prompt"][data-kind="question"]')
+      const custom = question.getByRole("textbox", { name: "Type your own answer…", exact: true })
+
+      for (const [role, first, last] of [
+        ["radio", "Reject", "Trust"],
+        ["checkbox", "Changed files", "Terminal"],
+      ] as const) {
+        const start = question.getByRole(role, { name: first, exact: true })
+        const end = question.getByRole(role, { name: last, exact: true })
+
+        await expect(start).toBeFocused()
+        await expect(custom).toHaveCount(0)
+        await expect(question.getByRole(role)).toHaveCount(2)
+        await start.press("End")
+        await expect(end).toBeFocused()
+        await end.press("ArrowDown")
+        await expect(end).toBeFocused()
+        await end.press("3")
+        await expect(end).toBeFocused()
+        await expect(custom).toHaveCount(0)
+        await end.click()
+        await expect(end).toBeChecked()
+        await question.getByRole("button", { name: "Next", exact: true }).click()
+      }
+
+      await expect(custom).toBeVisible()
+      await custom.fill("Keep the defaults")
+      await question.getByRole("button", { name: "Submit", exact: true }).click()
+      await expect(question).toBeHidden()
+    },
+  )
+
   story(`${variant} answer cards allow text selection without changing answers`, async ({ mount, page }) => {
     await page.addInitScript(
       (enabled) => localStorage.setItem("settings.v3", JSON.stringify({ general: { newQuestionUI: enabled } })),
