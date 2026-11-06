@@ -193,7 +193,7 @@ const agents = await ctx.agent.list()
 const build = await ctx.agent.get({ agentID: "build" })
 ```
 
-Register a transform to inspect, update, remove, or select the default agent.
+Register a transform to inspect, create, update, remove, or select the default agent.
 
 ```ts
 await ctx.agent.transform((editor) => {
@@ -205,6 +205,19 @@ await ctx.agent.transform((editor) => {
     agent.description = "Builds features and fixes bugs"
   })
   editor.remove("legacy")
+})
+```
+
+`editor.update(id, callback)` creates an agent with default settings if the ID does not exist, then calls the callback.
+Use it to register a new agent or edit an existing one.
+
+```ts
+await ctx.agent.transform((editor) => {
+  editor.update("reviewer", (agent) => {
+    agent.mode = "subagent"
+    agent.description = "Reviews code for bugs"
+    agent.system = "Review the changes and report actionable bugs."
+  })
 })
 ```
 
